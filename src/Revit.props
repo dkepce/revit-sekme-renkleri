@@ -1,0 +1,116 @@
+<Project>
+
+  <!-- ==================================================================
+       Ein Quellbaum, zwei Builds. Eingebunden per <Import> am Anfang der csproj.
+
+       Revit 2026.5 hat den Wirtsprozess von .NET 8 auf .NET 10 umgestellt
+       (nachzulesen im "tfm" der RevitAPI.runtimeconfig.json). Das ist eine
+       harte Grenze in beide Richtungen: eine net8-Assembly laedt nicht in
+       2026.5, und ein net8-Projekt laesst sich nicht einmal gegen eine
+       RevitAPI.dll aus 2026.5 uebersetzen - es bricht mit CS1705 ab.
+
+       Umgekehrt zeigt Revit 2026.4 beim Laden einer net10-Assembly genau
+       die Meldung, die diese Datei verhindern soll:
+
+           System.IO.FileNotFoundException
+           Could not load file or assembly 'System.Runtime, Version=10.0.0.0'
+
+       Deshalb wird beides aus derselben Quelle gebaut, je einmal pro
+       Laufzeit; die Deploy-Skripte nehmen die Fassung, die zum installierten
+       Revit passt. Das ist besser als ein einziger Build gegen die aeltere
+       API im Vertrauen auf Roll-Forward: die Assembly-Version der RevitAPI
+       folgt dem Update (26.5.0.0 bei 2026.5, 26.4.0.0 bei 2026.4), ein
+       solcher Build haenge also gleichzeitig an der Bindung auf eine hoehere
+       Version als angefordert UND am Rollen von System.Runtime 8 -> 10.
+       Beides klappt meistens. "Meistens" ist hier eine schlechte Wette, denn
+       der Fehlerfall ist stumm: Revit zeigt den Reiter einfach nicht an.
+       ================================================================== -->
+
+  <PropertyGroup>
+    <Net8Tfm>net8.0-windows10.0.19041.0</Net8Tfm>
+    <Net10Tfm>net10.0-windows10.0.19041.0</Net10Tfm>
+
+    <!-- Revit-Version zentral. Ueber -p:RevitVersion=2024 auf eine andere
+         Version bauen. -->
+    <RevitVersion Condition="'$(RevitVersion)' == ''">2026</RevitVersion>
+    <RevitInstallDir>C:\Program Files\Autodesk\Revit $(RevitVersion)</RevitInstallDir>
+  </PropertyGroup>
+
+  <!-- ==================================================================
+       Woher jede Fassung ihre RevitAPI.dll / RevitAPIUI.dll bekommt.
+
+       Es kann immer nur ein Revit-2026-Update installiert sein, und alle
+       liegen unter demselben Pfad - ein Rechner liefert also die
+       Referenz-Assemblies nur fuer eine Linie. Die zwei DLLs der anderen
+       Linie werden einmalig von einem Rechner mit diesem Update kopiert:
+
+           C:\RevitRefs\2026.4\   (RevitAPI.dll, RevitAPIUI.dll)  -> net8
+           C:\RevitRefs\2026.5\   (RevitAPI.dll, RevitAPIUI.dll)  -> net10
+
+       Anderer Ablageort per -p:RevitRefsDir=... Das sind reine
+       Referenz-Assemblies: nichts davon wandert in die Ausgabe, und fuer
+       diese Linie muss Revit nicht installiert sein.
+
+       Welcher Ordner fehlt, faellt auf das installierte Revit zurueck,
+       sofern das das passende ist - ein Rechner mit nur 2026.4 und ohne
+       kopierte Referenzen baut also weiterhin die net8-Linie und erzeugt
+       die net10-Linie schlicht nicht.
+       ================================================================== -->
+
+  <PropertyGroup>
+    <RevitRefsDir Condition="'$(RevitRefsDir)' == ''">C:\RevitRefs</RevitRefsDir>
+    <RevitApiRuntimeConfig>$(RevitInstallDir)\RevitAPI.runtimeconfig.json</RevitApiRuntimeConfig>
+
+    <!-- Worauf das installierte Revit tatsaechlich laeuft - vom Rechner
+         abgelesen statt aus der Update-Nummer geraten. -->
+    <InstalledRevitIsNet10 Condition="Exists('$(RevitApiRuntimeConfig)') AND $([System.IO.File]::ReadAllText('$(RevitApiRuntimeConfig)').Contains('net10.0'))">true</InstalledRevitIsNet10>
+
+    <Net10RefDir Condition="Exists('$(RevitRefsDir)\2026.5\RevitAPI.dll')">$(RevitRefsDir)\2026.5</Net10RefDir>
+    <Net10RefDir Condition="'$(Net10RefDir)' == '' AND '$(InstalledRevitIsNet10)' == 'true'">$(RevitInstallDir)</Net10RefDir>
+
+    <Net8RefDir Condition="Exists('$(RevitRefsDir)\2026.4\RevitAPI.dll')">$(RevitRefsDir)\2026.4</Net8RefDir>
+    <Net8RefDir Condition="'$(Net8RefDir)' == '' AND '$(InstalledRevitIsNet10)' != 'true' AND Exists('$(RevitInstallDir)\RevitAPI.dll')">$(RevitInstallDir)</Net8RefDir>
+  </PropertyGroup>
+
+  <!-- Jede Linie bauen, deren Referenzen vorhanden sind - und nur die. Ein
+       fehlender Referenzordner darf die andere Linie nicht scheitern
+       lassen; er heisst nur, dass dieser Rechner diese Haelfte nicht
+       herstellen kann. -->
+  <PropertyGroup>
+    <TargetFrameworks Condition="'$(Net8RefDir)' != '' AND '$(Net10RefDir)' != ''">$(Net8Tfm);$(Net10Tfm)</TargetFrameworks>
+    <TargetFrameworks Condition="'$(TargetFrameworks)' == '' AND '$(Net10RefDir)' != ''">$(Net10Tfm)</TargetFrameworks>
+    <TargetFrameworks Condition="'$(TargetFrameworks)' == '' AND '$(Net8RefDir)' != ''">$(Net8Tfm)</TargetFrameworks>
+    <!-- Nichts aufgeloest: trotzdem ein Zielframework setzen, damit das
+         Projekt laedt und der Build-Schritt unten den Grund nennen kann,
+         statt dass das SDK mit "TargetFrameworks is empty" abbricht. -->
+    <TargetFrameworks Condition="'$(TargetFrameworks)' == ''">$(Net10Tfm)</TargetFrameworks>
+  </PropertyGroup>
+
+  <Target Name="ExplainMissingRevitReferences" BeforeTargets="Build"
+          Condition="'$(Net8RefDir)' == '' AND '$(Net10RefDir)' == ''">
+    <Error Text="Keine Revit-Referenz-Assemblies gefunden. Erwartet entweder eine Installation unter '$(RevitInstallDir)' oder RevitAPI.dll unter '$(RevitRefsDir)\2026.4' / '$(RevitRefsDir)\2026.5'." />
+  </Target>
+
+  <ItemGroup Condition="'$(TargetFramework)' == '$(Net8Tfm)'">
+    <Reference Include="RevitAPI">
+      <HintPath>$(Net8RefDir)\RevitAPI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="RevitAPIUI">
+      <HintPath>$(Net8RefDir)\RevitAPIUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == '$(Net10Tfm)'">
+    <Reference Include="RevitAPI">
+      <HintPath>$(Net10RefDir)\RevitAPI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="RevitAPIUI">
+      <HintPath>$(Net10RefDir)\RevitAPIUI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

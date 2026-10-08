@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>Revit Sekme Renkleri</Name>
+    <Assembly>RevitSekmeRenkleri\RevitSekmeRenkleri.dll</Assembly>
+    <FullClassName>RevitSekmeRenkleri.TabColorApp</FullClassName>
+    <AddInId>28f53440-e65e-47c9-884e-4ec9470a66bf</AddInId>
+    <VendorId>TABC</VendorId>
+    <VendorDescription>Revit Sekme Renkleri</VendorDescription>
+  </AddIn>
+</RevitAddIns>

@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Zielframeworks und RevitAPI-Referenzen: siehe ..\Revit.props. Gebaut wird
+       je nach vorhandenen Referenzen fuer net8 (Revit bis 2026.4) und/oder
+       net10 (ab 2026.5). -->
+  <Import Project="..\Revit.props" />
+
+  <PropertyGroup>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>12</LangVersion>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>RevitSekmeRenkleri</AssemblyName>
+    <RootNamespace>RevitSekmeRenkleri</RootNamespace>
+    <Product>Revit Tab Colors</Product>
+    <Version>1.0.0</Version>
+    <!-- MSB3277: Die Revit-Assemblies ziehen aeltere BCL-Versionen nach. Revit
+         laedt zur Laufzeit ohnehin seine eigenen. -->
+    <MSBuildWarningsAsMessages>MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <!-- Fuer die Tab-Leiste: UIFramework liefert das Hauptfenster, Xceed.AvalonDock
+       das Dokument-Layout. Beides sind undokumentierte Revit-Interna und kommen
+       immer aus dem installierten Revit - nie ins Ausgabeverzeichnis kopieren. -->
+  <ItemGroup>
+    <Reference Include="UIFramework">
+      <HintPath>$(RevitInstallDir)\UIFramework.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Xceed.Wpf.AvalonDock">
+      <HintPath>$(RevitInstallDir)\Xceed.Wpf.AvalonDock.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
